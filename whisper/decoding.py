@@ -111,6 +111,9 @@ class DecodingOptions:
     # implementation details
     fp16: bool = True  # use fp16 for most of the calculation
 
+    # Print each beam search tree for analysis
+    verbose_beam_search: bool = False
+
 
 @dataclass(frozen=True)
 class DecodingResult:
@@ -303,17 +306,24 @@ class BeamSearchDecoder(TokenDecoder):
         eot: int,
         inference: Inference,
         patience: Optional[float] = None,
+        verbose: bool = False
     ):
         self.beam_size = beam_size
         self.eot = eot
         self.inference = inference
         self.patience = patience or 1.0
         self.max_candidates: int = round(beam_size * self.patience)
+        self.verbose = verbose
         self.finished_sequences = None
 
         assert (
             self.max_candidates > 0
         ), f"Invalid beam size ({beam_size}) or patience ({patience})"
+    
+    def print_vebose(self, string: str=''):
+        # Only prints if verbose is toggled
+        if self.verbose:
+            print(string)
 
     def reset(self):
         self.finished_sequences = None
@@ -334,14 +344,21 @@ class BeamSearchDecoder(TokenDecoder):
             scores, sources, finished = {}, {}, {}
 
             # STEP 1: calculate the cumulative log probabilities for possible candidates
+            self.print_vebose("Next step\n")
+
             for j in range(self.beam_size):
                 idx = i * self.beam_size + j
                 prefix = tokens[idx].tolist()
-                for logprob, token in zip(*logprobs[idx].topk(self.beam_size + 1)):
+
+                self.print_vebose(f"HYP: {tok.decode(prefix)}")
+
+                for logprob, token in zip(*logprobs[idx].topk(self.beam_size + 1)): # where does the +1 come from?
                     new_logprob = (sum_logprobs[idx] + logprob).item()
                     sequence = tuple(prefix + [token.item()])
                     scores[sequence] = new_logprob
                     sources[sequence] = idx
+
+                    self.print_vebose(f"   + ({new_logprob:.2f}) '{tok.decode([token.item()]).strip()}'")
 
             # STEP 2: rank the candidates and keep the top beam_size sequences for each audio
             saved = 0
@@ -353,9 +370,13 @@ class BeamSearchDecoder(TokenDecoder):
                     next_tokens.append(sequence)
                     source_indices.append(sources[sequence])
 
+                    self.print_vebose(f"HYP SELECT: ({scores[sequence]:.2f}) {tok.decode(sequence)}")
+
                     saved += 1
                     if saved == self.beam_size:
                         break
+
+            self.print_vebose()
 
             finished_sequences.append(finished)
 
@@ -502,6 +523,7 @@ class ApplyTimestampRules(LogitFilter):
             if timestamp_logprob > max_text_token_logprob:
                 logits[k, : self.tokenizer.timestamp_begin] = -np.inf
 
+tok = None # for verbose decoding
 
 class DecodingTask:
     inference: Inference
@@ -510,6 +532,7 @@ class DecodingTask:
     logit_filters: List[LogitFilter]
 
     def __init__(self, model: "Whisper", options: DecodingOptions):
+        
         self.model = model
 
         language = options.language or "en"
@@ -517,6 +540,11 @@ class DecodingTask:
             model.is_multilingual, language=language, task=options.task
         )
         self.tokenizer: Tokenizer = tokenizer
+
+        # Allows other classes to access tokenizer for verbose decoding
+        global tok
+        tok = tokenizer
+
         self.options: DecodingOptions = self._verify_options(options)
 
         self.n_group: int = options.beam_size or options.best_of or 1
@@ -540,7 +568,7 @@ class DecodingTask:
         # decoder: implements how to select the next tokens, given the autoregressive distribution
         if options.beam_size is not None:
             self.decoder = BeamSearchDecoder(
-                options.beam_size, tokenizer.eot, self.inference, options.patience
+                options.beam_size, tokenizer.eot, self.inference, options.patience, options.verbose_beam_search
             )
         else:
             self.decoder = GreedyDecoder(options.temperature, tokenizer.eot)
