@@ -109,7 +109,7 @@ class DecodingOptions:
     max_initial_timestamp: Optional[float] = 1.0
 
     # implementation details
-    fp16: bool = True  # use fp16 for most of the calculation
+    fp16: bool = True  # use fp16 for most of the calculation (causes RuntimeError on cpu)
 
     # Print each beam search tree for analysis
     verbose_beam_search: bool = False
@@ -604,6 +604,8 @@ class DecodingTask:
             0 <= options.length_penalty <= 1
         ):
             raise ValueError("length_penalty (alpha) should be a value between 0 and 1")
+        if options.fp16 is True and not torch.cuda.is_available():
+            raise RuntimeError("Using 'Half' on cpu raises a RuntimeError")
 
         return options
 
@@ -665,7 +667,8 @@ class DecodingTask:
         return tuple(sorted(set(suppress_tokens)))
 
     def _get_audio_features(self, mel: Tensor):
-        if self.options.fp16:
+
+        if self.options.fp16 == True:
             mel = mel.half()
 
         if mel.shape[-2:] == (
@@ -740,7 +743,7 @@ class DecodingTask:
 
         audio_features: Tensor = self._get_audio_features(mel)  # encoder forward pass
         tokens: Tensor = torch.tensor([self.initial_tokens]).repeat(n_audio, 1)
-
+        
         # detect language if requested, overwriting the language token
         languages, language_probs = self._detect_language(audio_features, tokens)
         if self.options.task == "lang_id":
