@@ -299,7 +299,7 @@ def transcribe(
                 ):
                     # no consecutive timestamps but it has a timestamp; use the last one.
                     last_timestamp_pos = (
-                        timestamps[-1].item() - tokenizer.timestamp_begin
+                        timestamps[-1].item() - tokenizer.timestamp_begin # how does this work?
                     )
                     duration = last_timestamp_pos * time_precision
 
@@ -315,14 +315,15 @@ def transcribe(
 
             if word_timestamps:
                 add_word_timestamps(
-                    segments=current_segments,
+                    segments=current_segments, # also include previous segments? why? does this help with inference?
                     model=model,
                     tokenizer=tokenizer,
-                    mel=mel_segment,
+                    mel=mel_segment, # encoding is re-computed here.
                     num_frames=segment_size,
                     prepend_punctuations=prepend_punctuations,
                     append_punctuations=append_punctuations,
                     last_speech_timestamp=last_speech_timestamp,
+                    **{'precomputed_audio_features': result.audio_features}
                 )
                 word_end_timestamps = [
                     w["end"] for s in current_segments for w in s["words"]

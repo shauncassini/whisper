@@ -166,6 +166,7 @@ def find_alignment(
     text_tokens: List[int],
     mel: torch.Tensor,
     num_frames: int,
+    precomputed_audio_features: torch.Tensor = None, # uses pre-computed audio features (from result)
     *,
     medfilt_width: int = 7,
     qk_scale: float = 1.0,
@@ -191,8 +192,13 @@ def find_alignment(
         for i, block in enumerate(model.decoder.blocks)
     ]
 
+    # can this section be pre-computed?
     with torch.no_grad():
-        logits = model(mel.unsqueeze(0), tokens.unsqueeze(0))[0]
+        if precomputed_audio_features is None: # redundant - why pass through the encoder twice? this is what is currently implemented
+            logits = model(mel.unsqueeze(0), tokens.unsqueeze(0))[0] 
+        else:
+            logits = model.logits(tokens.unsqueeze(0), precomputed_audio_features.unsqueeze(0))[0]
+
         sampled_logits = logits[len(tokenizer.sot_sequence) :, : tokenizer.eot]
         token_probs = sampled_logits.softmax(dim=-1)
         text_token_probs = token_probs[np.arange(len(text_tokens)), text_tokens]
@@ -221,7 +227,7 @@ def find_alignment(
         # This results in crashes when we lookup jump_times with float, like
         # IndexError: arrays used as indices must be of integer (or boolean) type
         return []
-    word_boundaries = np.pad(np.cumsum([len(t) for t in word_tokens[:-1]]), (1, 0))
+    word_boundaries = np.pad(np.cumsum([len(t) for t in word_tokens[:-1]]), (1, 0)) # combining tokens into words
 
     jumps = np.pad(np.diff(text_indices), (1, 0), constant_values=1).astype(bool)
     jump_times = time_indices[jumps] / TOKENS_PER_SECOND
