@@ -317,13 +317,12 @@ def transcribe(
                 add_word_timestamps(
                     segments=current_segments, # also include previous segments? why? does this help with inference?
                     model=model,
+                    audio_features=result.audio_features,
                     tokenizer=tokenizer,
-                    mel=mel_segment, # encoding is re-computed here.
                     num_frames=segment_size,
                     prepend_punctuations=prepend_punctuations,
                     append_punctuations=append_punctuations,
                     last_speech_timestamp=last_speech_timestamp,
-                    **{'precomputed_audio_features': result.audio_features}
                 )
                 word_end_timestamps = [
                     w["end"] for s in current_segments for w in s["words"]

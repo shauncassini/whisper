@@ -164,9 +164,8 @@ def find_alignment(
     model: "Whisper",
     tokenizer: Tokenizer,
     text_tokens: List[int],
-    mel: torch.Tensor,
+    audio_features: torch.Tensor,
     num_frames: int,
-    precomputed_audio_features: torch.Tensor = None, # uses pre-computed audio features (from result)
     *,
     medfilt_width: int = 7,
     qk_scale: float = 1.0,
@@ -194,11 +193,7 @@ def find_alignment(
 
     # can this section be pre-computed?
     with torch.no_grad():
-        if precomputed_audio_features is None: # redundant - why pass through the encoder twice? this is what is currently implemented
-            logits = model(mel.unsqueeze(0), tokens.unsqueeze(0))[0] 
-        else:
-            logits = model.logits(tokens.unsqueeze(0), precomputed_audio_features.unsqueeze(0))[0]
-
+        logits = model.logits(tokens.unsqueeze(0), audio_features.unsqueeze(0))[0]
         sampled_logits = logits[len(tokenizer.sot_sequence) :, : tokenizer.eot]
         token_probs = sampled_logits.softmax(dim=-1)
         text_token_probs = token_probs[np.arange(len(text_tokens)), text_tokens]
@@ -285,7 +280,7 @@ def add_word_timestamps(
     segments: List[dict],
     model: "Whisper",
     tokenizer: Tokenizer,
-    mel: torch.Tensor,
+    audio_features: torch.Tensor,
     num_frames: int,
     prepend_punctuations: str = "\"'“¿([{-",
     append_punctuations: str = "\"'.。,，!！?？:：”)]}、",
@@ -301,7 +296,7 @@ def add_word_timestamps(
     ]
 
     text_tokens = list(itertools.chain.from_iterable(text_tokens_per_segment))
-    alignment = find_alignment(model, tokenizer, text_tokens, mel, num_frames, **kwargs)
+    alignment = find_alignment(model, tokenizer, text_tokens, audio_features, num_frames, **kwargs)
     word_durations = np.array([t.end - t.start for t in alignment])
     word_durations = word_durations[word_durations.nonzero()]
     median_duration = np.median(word_durations) if len(word_durations) > 0 else 0.0
