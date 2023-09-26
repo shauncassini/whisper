@@ -159,6 +159,7 @@ class PyTorchInference(Inference):
 
         if tokens.shape[-1] > self.initial_token_length:
             # only need to use the last token except in the first forward pass
+            # since the kv_cache is being updated for new tokens
             tokens = tokens[:, -1:]
 
         return self.model.decoder(tokens, audio_features, kv_cache=self.kv_cache)
@@ -338,7 +339,7 @@ class BeamSearchDecoder(TokenDecoder):
         if self.finished_sequences is None:  # for the first update
             self.finished_sequences = [{} for _ in range(n_audio)]
 
-        logprobs = F.log_softmax(logits.float(), dim=-1)
+        logprobs = F.log_softmax(logits.float(), dim=-1) # (n_batch, n_beams, n_tokens)
         next_tokens, source_indices, finished_sequences = [], [], []
         for i in range(n_audio):
             scores, sources, finished = {}, {}, {}
@@ -347,7 +348,7 @@ class BeamSearchDecoder(TokenDecoder):
             self.print_vebose("Next step\n")
 
             for j in range(self.beam_size):
-                idx = i * self.beam_size + j
+                idx = i * self.beam_size + j # for batch-decoding
                 prefix = tokens[idx].tolist()
 
                 self.print_vebose(f"HYP: {tok.decode(prefix)}")
@@ -358,7 +359,11 @@ class BeamSearchDecoder(TokenDecoder):
                     scores[sequence] = new_logprob
                     sources[sequence] = idx
 
-                    self.print_vebose(f"   + ({new_logprob:.2f}) '{tok.decode([token.item()]).strip()}'")
+                    # for printing decoding stuff
+                    item = None
+                    if self.verbose:
+                        item = tok.decode([token.item()]) if token.item() < tok.timestamp_begin else 'TIMESTAMP'
+                    self.print_vebose(f"   + ({new_logprob:.2f}) '{item}'")
 
             # STEP 2: rank the candidates and keep the top beam_size sequences for each audio
             saved = 0
@@ -718,10 +723,10 @@ class DecodingTask:
                     probs_at_sot = logits[:, self.sot_index].float().softmax(dim=-1)
                     no_speech_probs = probs_at_sot[:, self.tokenizer.no_speech].tolist()
 
-                # now we need to consider the logits at the last token only
+                # now we need to consider the logits at the last token only (because of caching)
                 logits = logits[:, -1]
 
-                # apply the logit filters, e.g. for suppressing or applying penalty to
+                # apply the logit filters
                 for logit_filter in self.logit_filters:
                     logit_filter.apply(logits, tokens)
 

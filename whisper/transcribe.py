@@ -251,7 +251,7 @@ def transcribe(
             previous_seek = seek
             current_segments = []
 
-            timestamp_tokens: torch.Tensor = tokens.ge(tokenizer.timestamp_begin)
+            timestamp_tokens: torch.Tensor = tokens.ge(tokenizer.timestamp_begin) # tokens which are larger than the "begin" timestamp (50364)
             single_timestamp_ending = timestamp_tokens[-2:].tolist() == [False, True]
 
             consecutive = torch.where(timestamp_tokens[:-1] & timestamp_tokens[1:])[0]

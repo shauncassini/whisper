@@ -191,7 +191,6 @@ def find_alignment(
         for i, block in enumerate(model.decoder.blocks)
     ]
 
-    # can this section be pre-computed?
     with torch.no_grad():
         logits = model.logits(tokens.unsqueeze(0), audio_features.unsqueeze(0))[0]
         sampled_logits = logits[len(tokenizer.sot_sequence) :, : tokenizer.eot]
